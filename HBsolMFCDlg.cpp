@@ -1,5 +1,5 @@
 ﻿// HBsolMFCDlg.cpp: 구현 파일
-//
+// 123123
 
 #pragma once
 #include "pch.h"
