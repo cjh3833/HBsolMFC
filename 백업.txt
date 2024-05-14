@@ -1,0 +1,481 @@
+
+// HBsolMFCDlg.cpp: 구현 파일
+//
+
+#include "pch.h"
+#include "framework.h"
+#include "HBsolMFC.h"
+#include "HBsolMFCDlg.h"
+#include "afxdialogex.h"
+#pragma once
+// Include files to use the pylon API.
+#include <pylon/PylonIncludes.h>
+#ifdef PYLON_WIN_BUILD
+#    include <pylon/PylonGUI.h>
+#endif
+#include <pylon/PylonBase.h>
+
+// OpenCV
+#include <opencv2/opencv.hpp>
+#include <pylon/PylonIncludes.h>
+
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#endif
+
+using namespace cv;
+
+// Namespace for using pylon objects.
+using namespace Pylon;
+using namespace std;
+
+// Number of images to be grabbed.
+static const uint32_t c_countOfImagesToGrab = 100;
+// 응용 프로그램 정보에 사용되는 CAboutDlg 대화 상자입니다.
+
+class CAboutDlg : public CDialogEx
+{
+public:
+	CAboutDlg();
+
+// 대화 상자 데이터입니다.
+#ifdef AFX_DESIGN_TIME
+	enum { IDD = IDD_ABOUTBOX };
+#endif
+
+	protected:
+	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 지원입니다.
+
+// 구현입니다.
+protected:
+	DECLARE_MESSAGE_MAP()
+};
+
+CAboutDlg::CAboutDlg() : CDialogEx(IDD_ABOUTBOX)
+{
+}
+
+void CAboutDlg::DoDataExchange(CDataExchange* pDX)
+{
+	CDialogEx::DoDataExchange(pDX);
+}
+
+BEGIN_MESSAGE_MAP(CAboutDlg, CDialogEx)
+END_MESSAGE_MAP()
+
+
+// CHBsolMFCDlg 대화 상자
+
+
+
+CHBsolMFCDlg::CHBsolMFCDlg(CWnd* pParent /*=nullptr*/)
+	: CDialogEx(IDD_HBSOLMFC_DIALOG, pParent)
+{
+	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
+}
+
+void CHBsolMFCDlg::DoDataExchange(CDataExchange* pDX)
+{
+	CDialogEx::DoDataExchange(pDX);
+	DDX_Control(pDX, IDC_CAM_VIEW, m_CamView);
+	DDX_Control(pDX, IDC_CAM_TEM, m_temple);
+}
+
+BEGIN_MESSAGE_MAP(CHBsolMFCDlg, CDialogEx)
+	ON_WM_SYSCOMMAND()
+	ON_WM_PAINT()
+	ON_WM_QUERYDRAGICON()
+	ON_BN_CLICKED(IDC_CAM_START, &CHBsolMFCDlg::OnBnClickedCamStart)
+	ON_BN_CLICKED(IDC_CAM_STOP, &CHBsolMFCDlg::OnBnClickedCamStop)
+	ON_BN_CLICKED(IDC_TEMPLE, &CHBsolMFCDlg::OnBnClickedTemple)
+END_MESSAGE_MAP()
+
+
+// CHBsolMFCDlg 메시지 처리기
+
+BOOL CHBsolMFCDlg::OnInitDialog()
+{
+	CDialogEx::OnInitDialog();
+
+	// 시스템 메뉴에 "정보..." 메뉴 항목을 추가합니다.
+
+	// IDM_ABOUTBOX는 시스템 명령 범위에 있어야 합니다.
+	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
+	ASSERT(IDM_ABOUTBOX < 0xF000);
+
+	CMenu* pSysMenu = GetSystemMenu(FALSE);
+	if (pSysMenu != nullptr)
+	{
+		BOOL bNameValid;
+		CString strAboutMenu;
+		bNameValid = strAboutMenu.LoadString(IDS_ABOUTBOX);
+		ASSERT(bNameValid);
+		if (!strAboutMenu.IsEmpty())
+		{
+			pSysMenu->AppendMenu(MF_SEPARATOR);
+			pSysMenu->AppendMenu(MF_STRING, IDM_ABOUTBOX, strAboutMenu);
+		}
+	}
+
+	// 이 대화 상자의 아이콘을 설정합니다.  응용 프로그램의 주 창이 대화 상자가 아닐 경우에는
+	//  프레임워크가 이 작업을 자동으로 수행합니다.
+	SetIcon(m_hIcon, TRUE);			// 큰 아이콘을 설정합니다.
+	SetIcon(m_hIcon, FALSE);		// 작은 아이콘을 설정합니다.
+
+	// TODO: 여기에 추가 초기화 작업을 추가합니다.
+	PylonInitialize();
+
+	// Get the transport layer factory.
+	CTlFactory& tlFactory = CTlFactory::GetInstance();
+
+	// Get all attached devices and exit application if no device is found.
+	DeviceInfoList_t devices;
+	if (tlFactory.EnumerateDevices(devices) == 0) {
+		MessageBox(L"Basler Camera가 연결되지 않았습니다.");
+	}
+	else {
+		// create device
+		//IPylonDevice *pDevice = TlFactory.CreateDevice(lstDevices[0]);
+		// Create an instant camera object with the camera device found first.
+		m_pCamera = new CInstantCamera(CTlFactory::GetInstance().CreateFirstDevice());
+
+		try
+		{
+			// 카메라 파리미터 설정하기
+			m_pCamera->Open();
+
+			INodeMap& nodemap = m_pCamera->GetNodeMap();
+			// Get the integer nodes describing the AOI.
+			CIntegerPtr offsetX(nodemap.GetNode("OffsetX"));
+			CIntegerPtr offsetY(nodemap.GetNode("OffsetY"));
+			CIntegerPtr width(nodemap.GetNode("Width"));
+			CIntegerPtr height(nodemap.GetNode("Height"));
+
+			// GenApi has some convenience predicates to check this easily.
+			int new_width = 1024;
+			int new_height = 624;	// 768시 error 발생
+			if (IsWritable(width))   width->SetValue(new_width);
+			if (IsWritable(height))  height->SetValue(new_height);
+			if (IsWritable(offsetX)) offsetX->SetValue(new_width / 2);
+			if (IsWritable(offsetY)) offsetY->SetValue(new_height / 2);
+
+			// 카메라 정보 출력
+			CString info;
+			info.Format(_T("Found camera!\n<%s>\nSize X: %d\nSize Y: %d"),
+				CString(m_pCamera->GetDeviceInfo().GetModelName()),
+				width->GetValue(), height->GetValue());
+			AfxMessageBox(info);
+
+			m_pCamera->Close();
+		}
+		catch (GenICam::GenericException& e) //Error Handling
+		{
+			// Error handling
+			CString strTrace;
+			strTrace.Format(_T("Open_Camera - GenericException : %s\n"), (CString)e.GetDescription());
+			AfxMessageBox(strTrace);
+			return FALSE;
+		}
+	}
+	return TRUE;  // 포커스를 컨트롤에 설정하지 않으면 TRUE를 반환합니다.
+}
+
+void CHBsolMFCDlg::OnSysCommand(UINT nID, LPARAM lParam)
+{
+	if ((nID & 0xFFF0) == IDM_ABOUTBOX)
+	{
+		CAboutDlg dlgAbout;
+		dlgAbout.DoModal();
+	}
+	else
+	{
+		CDialogEx::OnSysCommand(nID, lParam);
+	}
+}
+
+// 대화 상자에 최소화 단추를 추가할 경우 아이콘을 그리려면
+//  아래 코드가 필요합니다.  문서/뷰 모델을 사용하는 MFC 애플리케이션의 경우에는
+//  프레임워크에서 이 작업을 자동으로 수행합니다.
+
+void CHBsolMFCDlg::OnPaint()
+{
+	if (IsIconic())
+	{
+		CPaintDC dc(this); // 그리기를 위한 디바이스 컨텍스트입니다.
+
+		SendMessage(WM_ICONERASEBKGND, reinterpret_cast<WPARAM>(dc.GetSafeHdc()), 0);
+
+		// 클라이언트 사각형에서 아이콘을 가운데에 맞춥니다.
+		int cxIcon = GetSystemMetrics(SM_CXICON);
+		int cyIcon = GetSystemMetrics(SM_CYICON);
+		CRect rect;
+		GetClientRect(&rect);
+		int x = (rect.Width() - cxIcon + 1) / 2;
+		int y = (rect.Height() - cyIcon + 1) / 2;
+
+		// 아이콘을 그립니다.
+		dc.DrawIcon(x, y, m_hIcon);
+	}
+	else
+	{
+		CDialogEx::OnPaint();
+	}
+}
+
+// 사용자가 최소화된 창을 끄는 동안에 커서가 표시되도록 시스템에서
+//  이 함수를 호출합니다.
+HCURSOR CHBsolMFCDlg::OnQueryDragIcon()
+{
+	return static_cast<HCURSOR>(m_hIcon);
+}
+
+
+UINT ThreadImageCaptureFunc(LPVOID param)
+{
+	CHBsolMFCDlg* pDlg = (CHBsolMFCDlg*)param;
+	if (pDlg->m_pCamera == NULL) return 0;
+
+	while (pDlg->m_bThreadFlag) {
+		// m_pCamera->StopGrabbing() is called automatically by the RetrieveResult() method
+		// when c_countOfImagesToGrab images have been retrieved.
+		try {
+
+			if (pDlg->m_pCamera->IsGrabbing()) {
+				// Wait for an image and then retrieve it. A timeout of 5000 ms is used.
+				pDlg->m_pCamera->RetrieveResult(5000, pDlg->m_ptrGrabResult, TimeoutHandling_ThrowException);
+
+				// Image grabbed successfully?
+				if (pDlg->m_ptrGrabResult->GrabSucceeded()) {
+
+					// Color로 포맷을 변경할 경우
+					CImageFormatConverter fc;
+					fc.OutputPixelFormat = PixelType_RGB8packed;
+					CPylonImage pylonImage;
+					fc.Convert(pylonImage, pDlg->m_ptrGrabResult);
+					Mat camImage = Mat(pDlg->m_ptrGrabResult->GetHeight(), pDlg->m_ptrGrabResult->GetWidth(), CV_8UC3, (uint8_t*)pylonImage.GetBuffer());
+
+					//Mat camImage = Mat(pDlg->m_ptrGrabResult->GetHeight(), pDlg->m_ptrGrabResult->GetWidth(), CV_8UC1,
+					//	(uint8_t*)pDlg->m_ptrGrabResult->GetBuffer());
+
+					CRect rect;
+					CDC* pDC = pDlg->m_CamView.GetDC();           // 출력한 부분의 DC 얻기
+					pDlg->m_CamView.GetClientRect(rect);               // 출력할 영역 얻기
+					DisplayImage(pDC, rect, camImage);  // 카메라에서 읽어들인 영상을 화면에 그리기
+					pDlg->ReleaseDC(pDC);
+
+				}
+				else {
+					CString str;
+					str.Format(_T("Error: %d %d"), pDlg->m_ptrGrabResult->GetErrorCode(), pDlg->m_ptrGrabResult->GetErrorDescription());
+					AfxMessageBox(str);
+					pDlg->m_bThreadFlag = false;
+				}
+			}
+		}
+		catch (GenICam::GenericException& e) {
+			// Error handling.
+			cerr << "An exception occurred." << e.GetDescription() << endl;
+		}
+	}
+
+	return 0;
+}
+void FillBitmapInfo(BITMAPINFO* bmi, int width, int height, int bpp, int origin)
+{
+	assert(bmi && width >= 0 && height >= 0 && (bpp == 8 || bpp == 24 || bpp == 32));
+	BITMAPINFOHEADER* bmih = &(bmi->bmiHeader);
+	memset(bmih, 0, sizeof(*bmih));
+	bmih->biSize = sizeof(BITMAPINFOHEADER);
+	bmih->biWidth = width;
+	bmih->biHeight = origin ? abs(height) : -abs(height);
+	bmih->biPlanes = 1;
+	bmih->biBitCount = (unsigned short)bpp;
+	bmih->biCompression = BI_RGB;
+	if (bpp == 8) {
+		RGBQUAD* palette = bmi->bmiColors;
+		for (int i = 0; i < 256; i++) {
+			palette[i].rgbBlue = palette[i].rgbGreen = palette[i].rgbRed = (BYTE)i;
+			palette[i].rgbReserved = 0;
+		}
+	}
+}
+
+void DisplayImage(CDC* pDC, CRect rect, Mat& srcimg)
+{
+	Mat img;
+	int width = ((int)(rect.Width() / 4)) * 4; // 4byte 단위조정해야 영상이 기울어지지 않는다.
+	resize(srcimg, img, Size(width, rect.Height()));
+	uchar buffer[sizeof(BITMAPINFOHEADER) * 1024];
+	BITMAPINFO* bmi = (BITMAPINFO*)buffer;
+
+	int bmp_w = img.cols;
+	int bmp_h = img.rows;
+	int depth = img.depth();
+	int channels = img.channels();
+	int bpp = 8 * channels;
+
+	FillBitmapInfo(bmi, bmp_w, bmp_h, bpp, 0);
+
+	int from_x = MIN(0, bmp_w - 1);
+	int from_y = MIN(0, bmp_h - 1);
+	int sw = MAX(MIN(bmp_w - from_x, rect.Width()), 0);
+	int sh = MAX(MIN(bmp_h - from_y, rect.Height()), 0);
+
+	SetDIBitsToDevice(pDC->m_hDC, rect.left, rect.top, sw, sh, from_x, from_y, 0, sh, img.data + from_y * img.step, bmi, 0);
+	img.release();
+}
+UINT ThreadImageCaptureFuncMFC(LPVOID param)
+{
+	CHBsolMFCDlg* pDlg = (CHBsolMFCDlg*)param;
+	if (pDlg->m_pCamera == NULL) return 0;
+
+	Point matchLoc;
+
+	// 찾을 패턴 이미지를 불러옴.
+	Mat Tenpattern = imread("10.png");
+
+	// 패턴을 찾은 결과를 저장할 이미지
+	// Mat : 행렬을 표현하기 위해 사용하는 클래스. 2차원 영상 데이터에 주로 사용됨.
+	Mat Tenresult;
+
+	// The exit code of the sample application.
+	int exitCode = 0;
+
+
+	while (pDlg->m_bThreadFlag2) {
+		// m_pCamera->StopGrabbing() is called automatically by the RetrieveResult() method
+		// when c_countOfImagesToGrab images have been retrieved.
+		try {
+
+			if (pDlg->m_pCamera->IsGrabbing()) {
+				// Wait for an image and then retrieve it. A timeout of 5000 ms is used.
+				pDlg->m_pCamera->RetrieveResult(5000, pDlg->m_ptrGrabResult, TimeoutHandling_ThrowException);
+
+				// Image grabbed successfully?
+				if (pDlg->m_ptrGrabResult->GrabSucceeded()) {
+					// Color로 포맷을 변경할 경우
+					CImageFormatConverter fc;
+					fc.OutputPixelFormat = PixelType_RGB8packed;
+					CPylonImage pylonImage;
+
+					// PylonImage의 자료형을 Mat으로 변환한 이미지를 저장하기 위한 변수.
+					Mat openCvImage;
+
+					//여러개의 패턴을 찾을때 사용할 임계값
+					double threshold = 0.97;
+
+
+					fc.Convert(pylonImage, pDlg->m_ptrGrabResult);
+					Mat camImage = Mat(pDlg->m_ptrGrabResult->GetHeight(), pDlg->m_ptrGrabResult->GetWidth(), CV_8UC3, (uint8_t*)pylonImage.GetBuffer());
+
+					//Mat camImage = Mat(pDlg->m_ptrGrabResult->GetHeight(), pDlg->m_ptrGrabResult->GetWidth(), CV_8UC1,
+					//	(uint8_t*)pDlg->m_ptrGrabResult->GetBuffer());
+					// Mat으로 변환된 이미지를 img_out에 복사함.
+					Mat img_out;
+					camImage.copyTo(img_out);
+					int Matching_method = 4;
+					/* 매칭 방법
+					0: TM_SQDIFF (일치하면 할수록 값이 작아짐)
+					1: TM_SQDIFF NORMED (일치하면 할수록 값이 작아짐)
+					2: TM CCORR
+					3: TM CCORR NORMED
+					4: TM COEFF
+					5: TM COEFF NORMED";
+					*/
+					// 패턴 탐색 시작.
+					//matchTemplate(openCvImage, pattern, result, Matching_method);
+
+
+					matchTemplate(openCvImage, Tenpattern, Tenresult, Matching_method);
+					normalize(Tenresult, Tenresult, 0, 1, NORM_MINMAX, -1, Mat());
+					// 결과값 전체 임계값 검사
+					for (int i = 0; i < Tenresult.rows; i++) {
+						for (int j = 0; j < Tenresult.cols; j++) {
+							if (Tenresult.at<float>(i, j) > threshold) {
+								// 임계값 이상의 좌표에 template(pattern) 크기만큼을 더해 사각형을 그림.
+								// OpenCV의 경우 RGB 순서가 아닌 BGR 순서로 표시함.
+								//rectangle(img_out, Point(j, i), Point(j + pattern.cols, i + pattern.rows), Scalar(0, 0, 255), 1);
+								rectangle(img_out, Point(j, i), Point(j + Tenpattern.cols, i + Tenpattern.rows), Scalar(0, 0, 255), 1);
+							}
+						}
+					}
+
+
+
+					CRect rect;
+					CDC* pDC = pDlg->m_temple.GetDC();           // 출력한 부분의 DC 얻기
+					pDlg->m_temple.GetClientRect(rect);               // 출력할 영역 얻기
+					DisplayImage(pDC, rect, img_out);  // 카메라에서 읽어들인 영상을 화면에 그리기
+					pDlg->ReleaseDC(pDC);
+
+				}
+				else {
+					CString str;
+					str.Format(_T("Error: %d %d"), pDlg->m_ptrGrabResult->GetErrorCode(), pDlg->m_ptrGrabResult->GetErrorDescription());
+					AfxMessageBox(str);
+					pDlg->m_bThreadFlag2 = false;
+				}
+			}
+		}
+		catch (GenICam::GenericException& e) {
+			// Error handling.
+			cerr << "An exception occurred." << e.GetDescription() << endl;
+		}
+	}
+
+	return 0;
+}
+void CHBsolMFCDlg::OnDestroy()
+{
+	CHBsolMFCDlg::OnDestroy();
+
+	// TODO: 여기에 메시지 처리기 코드를 추가합니다.
+	// Releases all pylon resources. 
+	PylonTerminate();
+
+	m_pCamera->StopGrabbing();
+	m_bThreadFlag = FALSE;
+
+	if (m_pCamera != NULL) delete m_pCamera;
+}
+
+void CHBsolMFCDlg::OnBnClickedCamStart()
+{
+	// TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
+	if (m_pCamera == NULL) {
+		MessageBox(L"Basler Camera를 연결 후 다시 실행시켜주세요.");
+		return;
+	}
+	m_pCamera->StartGrabbing( /*c_countOfImagesToGrab*/);
+	m_bThreadFlag = TRUE;
+	CWinThread* pThread = ::AfxBeginThread(ThreadImageCaptureFunc, this);
+
+}
+
+
+void CHBsolMFCDlg::OnBnClickedCamStop()
+{
+	// TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
+
+	if (m_pCamera == NULL) {
+		MessageBox(L"Basler Camera를 연결 후 다시 실행시켜주세요.");
+		return;
+	}
+	m_pCamera->StopGrabbing();
+	m_bThreadFlag = FALSE;          // 쓰레드 정지 시킴
+}
+
+
+
+void CHBsolMFCDlg::OnBnClickedTemple()
+{
+	// TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
+	if (m_pCamera == NULL) {
+		MessageBox(L"Basler Camera를 연결 후 다시 실행시켜주세요.");
+		return;
+	}
+	m_pCamera->StartGrabbing( /*c_countOfImagesToGrab*/);
+	m_bThreadFlag2 = TRUE;
+	CWinThread* pThread2 = ::AfxBeginThread(ThreadImageCaptureFuncMFC, this);
+	
+}
