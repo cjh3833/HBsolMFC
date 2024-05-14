@@ -166,7 +166,7 @@ Mat MarkDetector::matchTemplateByEdge(Mat input_shapes) {
         cv::cvtColor(input_shapes, input_shapes, COLOR_BGR2GRAY);
     }
 
-    // 잡음제거
+    // 잡음제거 가나다라
     cv::GaussianBlur(input_shapes, input_shapes, Size(3, 3), 5);
 
     Mat gx, gy;
