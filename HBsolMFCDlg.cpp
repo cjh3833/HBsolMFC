@@ -96,6 +96,8 @@ BEGIN_MESSAGE_MAP(CHBsolMFCDlg, CDialogEx)
     ON_COMMAND(ID_TEMPLATE_2, &CHBsolMFCDlg::OnTemplate2)
     ON_COMMAND(ID_TEMPLATE_3, &CHBsolMFCDlg::OnTemplate3)
     ON_WM_CTLCOLOR()
+    ON_COMMAND(ID_CAMERA_CAMSTART, &CHBsolMFCDlg::OnCameraCamstart)
+    ON_COMMAND(ID_CAMERA_CAMSTOP, &CHBsolMFCDlg::OnCameraCamstop)
 END_MESSAGE_MAP()
 
 
@@ -345,14 +347,18 @@ void DisplayImage(CDC* pDC, CRect rect, Mat& srcimg)
 }
 void CHBsolMFCDlg::DisplayTemImage(cv::Mat& _targetMat)
 {   //5.09
+    // CDC 포인터 및 MFC 이미지 객체 포인터 초기화
     CDC* pDC;
     CImage* mfcImg = nullptr;
 
+    // m_temple 컨트롤의 디바이스 컨텍스트를 가져옴
     pDC = m_temple.GetDC();
 
+    // 입력 이미지를 확대하여 tempImage에 저장
     cv::Mat tempImage;
     cv::resize(_targetMat, tempImage, Size(_targetMat.cols * 1, _targetMat.rows * 1));//0.98기준사진
 
+    // 비트맵 정보 구조체 초기화
     BITMAPINFO bitmapInfo;
     bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
     bitmapInfo.bmiHeader.biBitCount = 24;
@@ -366,35 +372,43 @@ void CHBsolMFCDlg::DisplayTemImage(cv::Mat& _targetMat)
     bitmapInfo.bmiHeader.biSizeImage = 0;
     bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
 
+
+
+    // 입력 이미지의 채널 수에 따라 분기
     if (_targetMat.channels() == 3)
-    {
+    {   // 채널 수가 3인 경우, 입력 이미지를 그대로 사용하여 24비트 이미지 생성
         //tempImage = _targetMat.clone();
         mfcImg = new CImage();
         mfcImg->Create(tempImage.cols, tempImage.rows, 24);
     }
 
     else if (_targetMat.channels() == 1)
-    {
+    {   // 채널 수가 1인 경우, 흑백 이미지를 컬러 이미지로 변환하여 24비트 이미지 생성
         cvtColor(tempImage, tempImage, COLOR_GRAY2BGR);
         mfcImg = new CImage();
         mfcImg->Create(tempImage.cols, tempImage.rows, 24);
     }
     else if (_targetMat.channels() == 4)
     {
+        // 채널 수가 4인 경우, 32비트 이미지 생성
         //tempImage = _targetMat.clone();
         bitmapInfo.bmiHeader.biBitCount = 32;
         mfcImg = new CImage();
         mfcImg->Create(tempImage.cols, tempImage.rows, 32);
     }
 
+    // 이미지를 수직 방향으로 뒤집음
     cv::flip(tempImage, tempImage, 0);
 
+    // tempImage를 mfcImg에 그림
     ::StretchDIBits(mfcImg->GetDC(), 0, 0, tempImage.cols, tempImage.rows,
         0, 0, tempImage.cols, tempImage.rows, tempImage.data, &bitmapInfo,
         DIB_RGB_COLORS, SRCCOPY);
 
+    // mfcImg를 m_temple 윈도우에 그림
     mfcImg->BitBlt(::GetDC(m_temple.m_hWnd), 0, 0);
 
+    // 메모리 해제
     if (mfcImg)
     {
         mfcImg->ReleaseDC();
@@ -443,6 +457,7 @@ void CHBsolMFCDlg::OnBnClickedCamStop()
     }
     m_pCamera->StopGrabbing();
     m_bThreadFlag = FALSE;          // 쓰레드 정지 시킴
+
 }
 
 void CHBsolMFCDlg::OnBnClickedTemple()
@@ -542,4 +557,28 @@ HBRUSH CHBsolMFCDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
     }
     // TODO:  기본값이 적당하지 않으면 다른 브러시를 반환합니다.
     return hbr;
+}
+
+void CHBsolMFCDlg::OnCameraCamstart()
+{   //Cam Start Menu
+    // TODO: 여기에 명령 처리기 코드를 추가합니다.
+    if (m_pCamera == NULL) {
+        MessageBox(L"Basler Camera를 연결 후 다시 실행시켜주세요.");
+        return;
+    }
+    m_pCamera->StartGrabbing( /*c_countOfImagesToGrab*/);
+    m_bThreadFlag = TRUE;
+    CWinThread* pThread = ::AfxBeginThread(ThreadImageCaptureFunc, this);
+}
+
+
+void CHBsolMFCDlg::OnCameraCamstop()
+{
+    // TODO: 여기에 명령 처리기 코드를 추가합니다.
+    if (m_pCamera == NULL) {
+        MessageBox(L"Basler Camera를 연결 후 다시 실행시켜주세요.");
+        return;
+    }
+    m_pCamera->StopGrabbing();
+    m_bThreadFlag = FALSE;          // 쓰레드 정지 시킴
 }

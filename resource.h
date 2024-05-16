@@ -28,13 +28,15 @@
 #define ID_LIGHTCONTROL_2               32776
 #define ID_DBSAVE_1                     32777
 #define ID_DBSAVE_2                     32778
+#define ID_CAMERA_CAMSTART              32779
+#define ID_CAMERA_CAMSTOP               32780
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        132
-#define _APS_NEXT_COMMAND_VALUE         32779
+#define _APS_NEXT_COMMAND_VALUE         32781
 #define _APS_NEXT_CONTROL_VALUE         1013
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

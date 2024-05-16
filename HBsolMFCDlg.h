@@ -82,4 +82,6 @@ public:
 	void DisplayTemImage(cv::Mat& _targetMat);
 	void CreateBitmapInfo(int w, int h, int bpp);
 	void DrawImage();
+	afx_msg void OnCameraCamstart();
+	afx_msg void OnCameraCamstop();
 };
