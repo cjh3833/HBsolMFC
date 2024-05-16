@@ -79,9 +79,11 @@ public:
 	Mat m_matImage;
 	BITMAPINFO* m_pBitmapInfo;
 
-	void DisplayTemImage(cv::Mat& _targetMat);
+	void CHBsolMFCDlg::DisplayTemImage(cv::Mat& _targetMat);
+	void CHBsolMFCDlg::DisplayMatchImage(cv::Mat& _targetMat);
 	void CreateBitmapInfo(int w, int h, int bpp);
 	void DrawImage();
 	afx_msg void OnCameraCamstart();
 	afx_msg void OnCameraCamstop();
+	CStatic m_result;
 };

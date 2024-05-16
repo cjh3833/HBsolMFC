@@ -33,7 +33,7 @@ Mat camImage; // 해당 변수 사용시 임계구역 선언 필수!
 CRITICAL_SECTION cs;
 CImageFormatConverter fc;
 CPylonImage pylonImage;
-CStatic m_temple;
+//CStatic m_temple;
 
 class CAboutDlg : public CDialogEx
 {
@@ -81,6 +81,7 @@ void CHBsolMFCDlg::DoDataExchange(CDataExchange* pDX)
     DDX_Control(pDX, IDC_CAM_TEM, m_temple);
     DDX_Control(pDX, IDC_EDIT_IP, m_IPname);
     DDX_Control(pDX, IDC_EDIT_PORT, m_Portname);
+    DDX_Control(pDX, IDC_CAM_RESULT, m_result);
 }
 
 BEGIN_MESSAGE_MAP(CHBsolMFCDlg, CDialogEx)
@@ -345,18 +346,27 @@ void DisplayImage(CDC* pDC, CRect rect, Mat& srcimg)
     SetDIBitsToDevice(pDC->m_hDC, rect.left, rect.top, sw, sh, from_x, from_y, 0, sh, img.data + from_y * img.step, bmi, 0);
     img.release();
 }
-void CHBsolMFCDlg::DisplayTemImage(cv::Mat& _targetMat)
+
+void CHBsolMFCDlg::DisplayMatchImage(cv::Mat& _targetMat)
 {   //5.09
+    //5.16 m_temple에 출력하는 함수
     // CDC 포인터 및 MFC 이미지 객체 포인터 초기화
     CDC* pDC;
+
     CImage* mfcImg = nullptr;
 
+    CStatic* staticSize = (CStatic*)GetDlgItem(IDC_CAM_TEM);
+    CRect rect;
+    staticSize->GetClientRect(rect);
+
+    int iWidth = ((int)(rect.Width() / 4)) * 4; // 4byte 단위조정해야 영상이 기울어지지 않는다.
+    int iHeight = rect.Height();
     // m_temple 컨트롤의 디바이스 컨텍스트를 가져옴
     pDC = m_temple.GetDC();
 
     // 입력 이미지를 확대하여 tempImage에 저장
     cv::Mat tempImage;
-    cv::resize(_targetMat, tempImage, Size(_targetMat.cols * 1, _targetMat.rows * 1));//0.98기준사진
+    cv::resize(_targetMat, tempImage, Size(iWidth, iHeight));//0.98기준사진
 
     // 비트맵 정보 구조체 초기화
     BITMAPINFO bitmapInfo;
@@ -405,8 +415,89 @@ void CHBsolMFCDlg::DisplayTemImage(cv::Mat& _targetMat)
         0, 0, tempImage.cols, tempImage.rows, tempImage.data, &bitmapInfo,
         DIB_RGB_COLORS, SRCCOPY);
 
-    // mfcImg를 m_temple 윈도우에 그림
+    // mfcImg를 picture 윈도우에 그림
     mfcImg->BitBlt(::GetDC(m_temple.m_hWnd), 0, 0);
+
+    // 메모리 해제
+    if (mfcImg)
+    {
+        mfcImg->ReleaseDC();
+        delete mfcImg; mfcImg = nullptr;
+    }
+    tempImage.release();
+    ReleaseDC(pDC);
+}
+
+void CHBsolMFCDlg::DisplayTemImage(cv::Mat& _targetMat)
+{   //5.09
+    //5.16 m_result에 출력하는 함수
+    // CDC 포인터 및 MFC 이미지 객체 포인터 초기화
+    CDC* pDC;
+
+    CImage* mfcImg = nullptr;
+
+    CStatic* staticSize = (CStatic*)GetDlgItem(IDC_CAM_RESULT);
+    CRect rect;
+    staticSize->GetClientRect(rect);
+
+    int iWidth = ((int)(rect.Width() / 4)) * 4; // 4byte 단위조정해야 영상이 기울어지지 않는다.
+    int iHeight = rect.Height();
+    // m_temple 컨트롤의 디바이스 컨텍스트를 가져옴
+    pDC = m_result.GetDC();
+
+    // 입력 이미지를 확대하여 tempImage에 저장
+    cv::Mat tempImage;
+    cv::resize(_targetMat, tempImage, Size(iWidth, iHeight));//0.98기준사진
+
+    // 비트맵 정보 구조체 초기화
+    BITMAPINFO bitmapInfo;
+    bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
+    bitmapInfo.bmiHeader.biBitCount = 24;
+    bitmapInfo.bmiHeader.biWidth = tempImage.cols;
+    bitmapInfo.bmiHeader.biHeight = tempImage.rows;
+    bitmapInfo.bmiHeader.biPlanes = 1;
+    bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmapInfo.bmiHeader.biCompression = BI_RGB;
+    bitmapInfo.bmiHeader.biClrImportant = 0;
+    bitmapInfo.bmiHeader.biClrUsed = 0;
+    bitmapInfo.bmiHeader.biSizeImage = 0;
+    bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
+
+
+
+    // 입력 이미지의 채널 수에 따라 분기
+    if (_targetMat.channels() == 3)
+    {   // 채널 수가 3인 경우, 입력 이미지를 그대로 사용하여 24비트 이미지 생성
+        //tempImage = _targetMat.clone();
+        mfcImg = new CImage();
+        mfcImg->Create(tempImage.cols, tempImage.rows, 24);
+    }
+
+    else if (_targetMat.channels() == 1)
+    {   // 채널 수가 1인 경우, 흑백 이미지를 컬러 이미지로 변환하여 24비트 이미지 생성
+        cvtColor(tempImage, tempImage, COLOR_GRAY2BGR);
+        mfcImg = new CImage();
+        mfcImg->Create(tempImage.cols, tempImage.rows, 24);
+    }
+    else if (_targetMat.channels() == 4)
+    {
+        // 채널 수가 4인 경우, 32비트 이미지 생성
+        //tempImage = _targetMat.clone();
+        bitmapInfo.bmiHeader.biBitCount = 32;
+        mfcImg = new CImage();
+        mfcImg->Create(tempImage.cols, tempImage.rows, 32);
+    }
+
+    // 이미지를 수직 방향으로 뒤집음
+    cv::flip(tempImage, tempImage, 0);
+
+    // tempImage를 mfcImg에 그림
+    ::StretchDIBits(mfcImg->GetDC(), 0, 0, tempImage.cols, tempImage.rows,
+        0, 0, tempImage.cols, tempImage.rows, tempImage.data, &bitmapInfo,
+        DIB_RGB_COLORS, SRCCOPY);
+
+    // mfcImg를 picture 윈도우에 그림
+    mfcImg->BitBlt(::GetDC(m_result.m_hWnd), 0, 0);
 
     // 메모리 해제
     if (mfcImg)
@@ -463,42 +554,7 @@ void CHBsolMFCDlg::OnBnClickedCamStop()
 void CHBsolMFCDlg::OnBnClickedTemple()
 {
     // TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
-    if (m_pCamera == NULL) {
-        MessageBox(L"Basler Camera를 연결 후 다시 실행시켜주세요.");
-        return;
-    }
-
-    // -------------------------------------
-    // ---------- CRITICAL SECTION ---------
-
-    EnterCriticalSection(&cs);
-    Mat frame = camImage;
-    LeaveCriticalSection(&cs);
-
-    // ---------- CRITICAL SECTION ---------
-    // -------------------------------------
-
-    cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
-    cv::imshow("frame", frame);
-
-    Mat templ = imread("templ.png", cv::IMREAD_GRAYSCALE);
-    if (templ.empty()) {
-        MessageBox(L"Template 이미지가 없습니다");
-        return;
-    }
-
-    MarkDetector md;
-    Mat templ_out = md.trainEdge(templ);
-    cv::imshow("templ", templ_out);
-
-    Mat frame_out = md.matchTemplateByEdge(frame);
-    cv::imshow("result", frame_out);
-
-    DisplayTemImage(frame_out);
-
-    
-
-    
+   
 
 }
 
@@ -523,17 +579,51 @@ void CHBsolMFCDlg::OnLightcontrol1()
 
 
 void CHBsolMFCDlg::OnTemplate1()
-{   //툴바 template 1번째줄 메뉴
+{   //Template_Start
+    //툴바 template 1번째 메뉴
    // TODO: 여기에 명령 처리기 코드를 추가합니다.
-    Mat src = imread("templ.png");
-    DisplayTemImage(src);
+    if (m_pCamera == NULL) {
+        MessageBox(L"Basler Camera를 연결 후 다시 실행시켜주세요.");
+        return;
+    }
+
+    // -------------------------------------
+    // ---------- CRITICAL SECTION ---------
+
+    EnterCriticalSection(&cs);
+    Mat frame = camImage;
+    LeaveCriticalSection(&cs);
+
+    // ---------- CRITICAL SECTION ---------
+    // -------------------------------------
+
+    cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
+    //cv::imshow("frame", frame);
+
+    Mat templ = imread("templ.png", cv::IMREAD_GRAYSCALE);
+    if (templ.empty()) {
+        MessageBox(L"Template 이미지가 없습니다");
+        return;
+    }
+
+    MarkDetector md;
+    Mat templ_out = md.trainEdge(templ);
+    //cv::imshow("templ", templ_out);
+    DisplayMatchImage(templ_out);
+
+    Mat frame_out = md.matchTemplateByEdge(frame);
+    //cv::imshow("result", frame_out);
+    DisplayTemImage(frame_out);
+
 
 }
 
 
 void CHBsolMFCDlg::OnTemplate2()
 {   //툴바 template 2번째줄 메뉴
-   // TODO: 여기에 명령 처리기 코드를 추가합니다.
+    //Template_Start
+    // TODO: 여기에 명령 처리기 코드를 추가합니다.
+    
 }
 
 
@@ -580,5 +670,5 @@ void CHBsolMFCDlg::OnCameraCamstop()
         return;
     }
     m_pCamera->StopGrabbing();
-    m_bThreadFlag = FALSE;          // 쓰레드 정지 시킴
+    m_bThreadFlag = FALSE;          // 쓰레드 정지시킴
 }
