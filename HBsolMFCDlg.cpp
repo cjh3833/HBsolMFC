@@ -82,6 +82,7 @@ void CHBsolMFCDlg::DoDataExchange(CDataExchange* pDX)
     DDX_Control(pDX, IDC_EDIT_IP, m_IPname);
     DDX_Control(pDX, IDC_EDIT_PORT, m_Portname);
     DDX_Control(pDX, IDC_CAM_RESULT, m_result);
+    DDX_Control(pDX, IDC_CAM_TEMHIS, m_temhis);
 }
 
 BEGIN_MESSAGE_MAP(CHBsolMFCDlg, CDialogEx)
@@ -90,7 +91,6 @@ BEGIN_MESSAGE_MAP(CHBsolMFCDlg, CDialogEx)
     ON_WM_QUERYDRAGICON()
     ON_BN_CLICKED(IDC_CAM_START, &CHBsolMFCDlg::OnBnClickedCamStart)
     ON_BN_CLICKED(IDC_CAM_STOP, &CHBsolMFCDlg::OnBnClickedCamStop)
-    ON_BN_CLICKED(IDC_TEMPLE, &CHBsolMFCDlg::OnBnClickedTemple)
     ON_BN_CLICKED(IDC_SERVER, &CHBsolMFCDlg::OnBnClickedServer)
     ON_COMMAND(ID_LIGHTCONTROL_1, &CHBsolMFCDlg::OnLightcontrol1)
     ON_COMMAND(ID_TEMPLATE_1, &CHBsolMFCDlg::OnTemplate1)
@@ -428,6 +428,124 @@ void CHBsolMFCDlg::DisplayMatchImage(cv::Mat& _targetMat)
     ReleaseDC(pDC);
 }
 
+void CHBsolMFCDlg::DisplayTemHisImage(cv::Mat& _targetMat)
+{   //5.09
+    //5.16 m_temple에 출력하는 함수
+    // CDC 포인터 및 MFC 이미지 객체 포인터 초기화
+    CDC* pDC;
+
+    CImage* mfcImg = nullptr;
+
+    CStatic* staticSize = (CStatic*)GetDlgItem(IDC_CAM_TEMHIS);
+    CRect rect;
+    staticSize->GetClientRect(rect);
+
+    int iWidth = ((int)(rect.Width() / 4)) * 4; // 4byte 단위조정해야 영상이 기울어지지 않는다.
+    int iHeight = rect.Height();
+    // m_temple 컨트롤의 디바이스 컨텍스트를 가져옴
+    pDC = m_temhis.GetDC();
+
+    // 입력 이미지를 확대하여 tempImage에 저장
+    cv::Mat tempImage;
+    cv::resize(_targetMat, tempImage, Size(iWidth, iHeight));//0.98기준사진
+
+    // 비트맵 정보 구조체 초기화
+    BITMAPINFO bitmapInfo;
+    bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
+    bitmapInfo.bmiHeader.biBitCount = 24;
+    bitmapInfo.bmiHeader.biWidth = tempImage.cols;
+    bitmapInfo.bmiHeader.biHeight = tempImage.rows;
+    bitmapInfo.bmiHeader.biPlanes = 1;
+    bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmapInfo.bmiHeader.biCompression = BI_RGB;
+    bitmapInfo.bmiHeader.biClrImportant = 0;
+    bitmapInfo.bmiHeader.biClrUsed = 0;
+    bitmapInfo.bmiHeader.biSizeImage = 0;
+    bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
+
+
+
+    // 입력 이미지의 채널 수에 따라 분기
+    if (_targetMat.channels() == 3)
+    {   // 채널 수가 3인 경우, 입력 이미지를 그대로 사용하여 24비트 이미지 생성
+        //tempImage = _targetMat.clone();
+        mfcImg = new CImage();
+        mfcImg->Create(tempImage.cols, tempImage.rows, 24);
+    }
+
+    else if (_targetMat.channels() == 1)
+    {   // 채널 수가 1인 경우, 흑백 이미지를 컬러 이미지로 변환하여 24비트 이미지 생성
+        cvtColor(tempImage, tempImage, COLOR_GRAY2BGR);
+        mfcImg = new CImage();
+        mfcImg->Create(tempImage.cols, tempImage.rows, 24);
+    }
+    else if (_targetMat.channels() == 4)
+    {
+        // 채널 수가 4인 경우, 32비트 이미지 생성
+        //tempImage = _targetMat.clone();
+        bitmapInfo.bmiHeader.biBitCount = 32;
+        mfcImg = new CImage();
+        mfcImg->Create(tempImage.cols, tempImage.rows, 32);
+    }
+
+    // 이미지를 수직 방향으로 뒤집음
+    cv::flip(tempImage, tempImage, 0);
+
+    // tempImage를 mfcImg에 그림
+    ::StretchDIBits(mfcImg->GetDC(), 0, 0, tempImage.cols, tempImage.rows,
+        0, 0, tempImage.cols, tempImage.rows, tempImage.data, &bitmapInfo,
+        DIB_RGB_COLORS, SRCCOPY);
+
+    // mfcImg를 picture 윈도우에 그림
+    mfcImg->BitBlt(::GetDC(m_temhis.m_hWnd), 0, 0);
+
+    // 메모리 해제
+    if (mfcImg)
+    {
+        mfcImg->ReleaseDC();
+        delete mfcImg; mfcImg = nullptr;
+    }
+    tempImage.release();
+    ReleaseDC(pDC);
+}
+void CHBsolMFCDlg::calc_Histo(const Mat& img, Mat& hist, int bins, int range_max = 256) //히스토그램 계산 함수
+{
+    int histSize[] = { 256 }; // 히스토그램 계급 개수
+    float range[] = { 0, (float)range_max }; // 0번 채널 화소값 범위
+    int channels[] = { 0 }; //채널 목록 - 단일 채널
+    const float* ranges[] = { range }; //모든 채널 화소 범위
+
+    calcHist(&img, 1, channels, Mat(), hist, 1, histSize, ranges);
+}
+
+void CHBsolMFCDlg::draw_histo(Mat hist, Mat& hist_img, Size size = Size(512, 400)) { //히스토그램 드로잉 함수
+    hist_img = Mat(size, CV_8U, Scalar(255)); //그래프 행렬
+    float bin = (float)hist_img.cols / hist.rows; // 한 계급 너비
+    normalize(hist, hist, 0, hist_img.rows, NORM_MINMAX); // 정규화
+
+    for (int i = 0; i < hist.rows; i++)
+    {
+        float start_x = i * bin; // 막대 사각형 시작 X 좌표
+        float end_x = (i + 1) * bin; // 막대 사각형 종료 x 좌표
+        Point2f pt1(start_x, 0);
+        Point2f pt2(end_x, hist.at<float>(i));
+
+        if (pt2.y > 0)
+            rectangle(hist_img, pt1, pt2, Scalar(0), -1); // 막대 사각형 그리기
+    }
+    flip(hist_img, hist_img, 0); // x축 기준 영상 뒤집기
+}
+
+void CHBsolMFCDlg::create_hist(Mat img, Mat& hist, Mat& hist_img) //히스토그램 그리는 클래스
+{
+    int histsize = 256, range = 256;
+    calc_Histo(img, hist, histsize, range); // 히스토그램 계산
+    draw_histo(hist, hist_img); //히스토그램 그래프 그리기
+}
+
+
+
+
 void CHBsolMFCDlg::DisplayTemImage(cv::Mat& _targetMat)
 {   //5.09
     //5.16 m_result에 출력하는 함수
@@ -551,12 +669,6 @@ void CHBsolMFCDlg::OnBnClickedCamStop()
 
 }
 
-void CHBsolMFCDlg::OnBnClickedTemple()
-{
-    // TODO: 여기에 컨트롤 알림 처리기 코드를 추가합니다.
-   
-
-}
 
 void CHBsolMFCDlg::OnBnClickedServer()
 {
@@ -575,6 +687,42 @@ void CHBsolMFCDlg::OnBnClickedServer()
 void CHBsolMFCDlg::OnLightcontrol1()
 {   //툴바 lighcontrol 1번째줄 메뉴
    // TODO: 여기에 명령 처리기 코드를 추가합니다.
+    if (m_pCamera == NULL) {
+        MessageBox(L"Basler Camera를 연결 후 다시 실행시켜주세요.");
+        return;
+    }
+    Mat src_hist, src_hist_result, templ_hist, templ_hist_img;
+    Mat src_compare_hist, src_compare_result;
+    //Mat threshold_img, threshold_hist, threshold_hist_result; // 히스토그램의 이진화
+    // -------------------------------------
+    // ---------- CRITICAL SECTION ---------
+
+    EnterCriticalSection(&cs);
+    Mat frame = camImage;
+    LeaveCriticalSection(&cs);
+
+    // ---------- CRITICAL SECTION ---------
+    // -------------------------------------
+    cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
+    //cv::imshow("frame", frame);
+
+    Mat src_compare = imread("compare_src.png", cv::IMREAD_GRAYSCALE); //compare용
+    if (src_compare.empty())
+    {
+        std::cerr << "compare 이미지 없음" << std::endl;
+        return;
+    }
+
+    //위 코드 함수, 히스토그램 계산 + 그리기
+    create_hist(frame, src_hist, src_hist_result);
+    create_hist(src_compare, src_compare_hist, src_compare_result);
+    
+    //출력
+
+    cv :: imshow("hist", src_hist_result);
+    //cv :: imshow("Compare Histogram", src_compare_result);
+    DisplayTemHisImage(src_compare_result);
+
 }
 
 

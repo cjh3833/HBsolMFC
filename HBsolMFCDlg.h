@@ -20,6 +20,7 @@ using namespace GenApi;
 using namespace cv;
 
 
+	
 UINT ThreadImageCaptureFunc(LPVOID param);  // 쓰레드 함수
 UINT ThreadImageCaptureFuncMFC(LPVOID param);  // 쓰레드 함수
 void FillBitmapInfo(BITMAPINFO* bmi, int width, int height, int bpp, int origin);
@@ -46,7 +47,6 @@ public:
 	BOOL m_bThreadFlag2;                 // 쓰레드 루프 돌기
 	CInstantCamera* m_pCamera;          // Basler Camera
 	CGrabResultPtr m_ptrGrabResult;     // grab result data 받기
-
 // 구현입니다.
 protected:
 	HICON m_hIcon;
@@ -66,7 +66,6 @@ public:
 	void OnDestroy();
 	void OnBnClickedCamStart();
 	afx_msg void OnBnClickedCamStop();
-	afx_msg void OnBnClickedTemple();
 	
 	afx_msg void OnBnClickedServer();
 	CEdit m_IPname;
@@ -78,12 +77,16 @@ public:
 	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
 	Mat m_matImage;
 	BITMAPINFO* m_pBitmapInfo;
-
+	void calc_Histo(const Mat& img, Mat& hist, int bins, int range_max);
+	void draw_histo(Mat hist, Mat& hist_img, Size size);
+	void create_hist(Mat img, Mat& hist, Mat& hist_img);
 	void CHBsolMFCDlg::DisplayTemImage(cv::Mat& _targetMat);
 	void CHBsolMFCDlg::DisplayMatchImage(cv::Mat& _targetMat);
+	void CHBsolMFCDlg::DisplayTemHisImage(cv::Mat& _targetMat);
 	void CreateBitmapInfo(int w, int h, int bpp);
 	void DrawImage();
 	afx_msg void OnCameraCamstart();
 	afx_msg void OnCameraCamstop();
 	CStatic m_result;
+	CStatic m_temhis;
 };
